@@ -4,19 +4,18 @@ namespace NetSonar;
 
 public class BitWriter(Stream stream)
 {
-    private byte _incompleteByte;
     private int _incompleteBitCount;
-    
-    public byte Incomplete => _incompleteByte;
+
+    private byte IncompleteByte { get; set; }
     
     public void Write(ulong value, int bitCount)
     {
         if (bitCount > 64) throw new Exception("Cannot write more than 64 bits at a time");
         
-        // handle values that don't fill up the _incompleteByte
+        // handle values that don't fill up the incomplete byte
         if (_incompleteBitCount + bitCount < 8)
         {
-            _incompleteByte |= (byte)((value << (8 - bitCount)) >> _incompleteBitCount);
+            IncompleteByte |= (byte)((value << (8 - bitCount)) >> _incompleteBitCount);
             _incompleteBitCount += bitCount;
             return;
         }
@@ -26,14 +25,14 @@ public class BitWriter(Stream stream)
         
         var firstByteWriteBits = 8 - _incompleteBitCount;
         
-        var firstByte = (byte)(((ulong)_incompleteByte & incompleteMask) | ((value & valueMask) >> (bitCount - firstByteWriteBits)));
+        var firstByte = (byte)(((ulong)IncompleteByte & incompleteMask) | ((value & valueMask) >> (bitCount - firstByteWriteBits)));
         
         stream.WriteByte(firstByte);
 
         var remainingBitCount = bitCount - firstByteWriteBits;
         var (writeByteCount, incompleteBitCount) = int.DivRem(remainingBitCount, 8);
 
-        _incompleteByte = (byte)((value >> (bitCount - incompleteBitCount) << (8 - incompleteBitCount)) & 0xFF);
+        IncompleteByte = (byte)((value >> (bitCount - incompleteBitCount) << (8 - incompleteBitCount)) & 0xFF);
         _incompleteBitCount = incompleteBitCount;
         
         for (var i = 1; i < writeByteCount + 1; i++)
@@ -45,8 +44,8 @@ public class BitWriter(Stream stream)
     
     public void Flush()
     {
-        stream.WriteByte(_incompleteByte);
-        _incompleteByte = 0;
+        stream.WriteByte(IncompleteByte);
+        IncompleteByte = 0;
         _incompleteBitCount = 0;
     }
     
@@ -58,8 +57,6 @@ public class BitWriter(Stream stream)
 
     public override string ToString()
     {
-        if (stream.Length == 0) return "";
-        
         var buffer = new Span<byte>(new byte[stream.Length]);
         var p = stream.Position;
         stream.Position = 0;
@@ -73,6 +70,6 @@ public class BitWriter(Stream stream)
             s.Append($"{b:b8} ");
         }
         
-        return s.Remove(s.Length - 1, 1).ToString();
+        return $"{s.Remove(s.Length - 1, 1)} / {(IncompleteByte >> (8 - _incompleteBitCount)).ToString($"B{_incompleteBitCount}")}";
     }
 }

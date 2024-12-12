@@ -20,17 +20,17 @@ public readonly struct IpRange : IEnumerable<IPAddress>
     public IpRange(IPAddress start, IPAddress end) : this(start.GetUint(), end.GetUint()) { }
     public IpRange(string start, string end) : this(IPAddress.Parse(start), IPAddress.Parse(end)) { }
 
-    public IpRange(string cdir)
+    public IpRange(string cidr)
     {
-        var slash = cdir.IndexOf('/');
+        var slash = cidr.IndexOf('/');
         if (slash == -1)
         {
-            _first = _last = IPAddress.Parse(cdir).GetUint();
+            _first = _last = IPAddress.Parse(cidr).GetUint();
             return;
         }
-        _first = IPAddress.Parse(cdir[..slash]).GetUint();
+        _first = IPAddress.Parse(cidr[..slash]).GetUint();
         
-        var subnetMaskNumber = int.Parse(cdir[(slash + 1)..]);
+        var subnetMaskNumber = int.Parse(cidr[(slash + 1)..]);
         ArgumentOutOfRangeException.ThrowIfNegative(subnetMaskNumber, nameof(subnetMaskNumber));
         ArgumentOutOfRangeException.ThrowIfGreaterThan(subnetMaskNumber, 32, nameof(subnetMaskNumber));
         
@@ -49,6 +49,12 @@ public readonly struct IpRange : IEnumerable<IPAddress>
         var size = Size / denominator;
         var first = _first + numerator * size;
         return new IpRange(first, first + size - 1);
+    }
+
+    public string GetCidr()
+    {
+        var subnetMask = 32-(int)Math.Round(Math.Log2(_last - _first));
+        return $"{new IPAddress(_first.GetBytes())}/{subnetMask}";
     }
     
     public IEnumerator<IPAddress> GetEnumerator()

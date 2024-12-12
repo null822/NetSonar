@@ -54,11 +54,11 @@ public struct IcmpPacket
         
         ComputeChecksum();
     }
-
-    public IcmpPacket(byte[] bytes, int offset)
+    
+    public IcmpPacket(Span<byte> bytes)
     {
         var s = new MemoryStream();
-        s.Write(bytes, offset, bytes.Length - offset);
+        s.Write(bytes);
         s.Position = 0;
         var packet = new BinaryReader(s, Encoding.Default, false);
         

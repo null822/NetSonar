@@ -2,101 +2,82 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
+using static NetSonar.Constants;
 
 namespace NetSonar;
 
 public static class Program
 {
-    private static readonly Socket[] IcmpSockets = new Socket[SenderCount];
+    private static readonly DataProcessor DataProcessor = new();
+    
     private static readonly IcmpSender[] Senders = new IcmpSender[SenderCount];
-    private static readonly List<Task<int>> Receivers = new(SenderCount);
-    private static readonly byte[] Buffers = new byte[SenderCount * BufferSize];
+    private static readonly IcmpReceiver[] Receivers = new IcmpReceiver[ReceiverCount];
+    private static readonly byte[] Buffer = new byte[ReceiverCount * BufferSize];
+    
+    private static readonly Socket IcmpSocket = new(AddressFamily.InterNetwork, SocketType.Raw, ProtocolType.Icmp)
+    {
+        ReceiveTimeout = 1,
+        ReceiveBufferSize = BufferSize,
+        SendBufferSize = BufferSize
+    };
     
     public static readonly Stopwatch Timer = new();
-
-    public static readonly IPAddress LocalHostAddress = Dns.GetHostAddresses(Dns.GetHostName())
-        .First(a => a.AddressFamily == AddressFamily.InterNetwork);
     
     /*
      * 1.0.*.*
      * 
-     * synchronous = ~27.5s / 65536 IPs @ ~1.1Mb/s
-     * 16 senders = ~27.5s / 65536 IPs @ ~1.1Mb/s
-     * synchronous = ~0.75s / 4096 IPs @ ~1.1Mb/s
-     * synchronous + invalid checksum = ~11s / 65536 IPs @ ~2.9Mb/s
+     * synchronous = ~27.5s / 65536 IPs @ ~1.1MB/s
+     * 16 senders = ~27.5s / 65536 IPs @ ~1.1MB/s
+     * synchronous = ~0.75s / 4096 IPs @ ~1.1MB/s
+     * synchronous + invalid checksum = ~11s / 65536 IPs @ ~2.9MB/s
+     *
+     * ~ 2166 IPs/s/[MB/s]
      * 
      * 
      */
-    private const int SenderCount = 16;
-    private const int BufferSize = 128;
-    private static readonly IpRange Range = new("1.0.0.0/16");
     
     public static void Main()
     {
+        Console.WriteLine($"Scanning IPs in range {Constants.Range} ({Constants.Range.GetCidr()})");
+        
         Timer.Start();
         
-        var lEp = new IPEndPoint(LocalHostAddress, 0);
+        // create senders
         for (uint i = 0; i < SenderCount; i++)
         {
-            var s = new Socket(AddressFamily.InterNetwork, SocketType.Raw, ProtocolType.Icmp)
-            {
-                ReceiveBufferSize = BufferSize,
-                SendBufferSize = BufferSize
-            };
-            
-            IcmpSockets[i] = s;
-            
-            Senders[i] = new IcmpSender(s, Range.Split(i, SenderCount));
+            Senders[i] = new IcmpSender(IcmpSocket, DataProcessor, Constants.Range.Split(i, SenderCount));
         }
         
         var receiveStopwatch = new Stopwatch();
         receiveStopwatch.Start();
         
-        for (var i = 0; i < SenderCount; i++)
+        // create receivers
+        for (var i = 0; i < ReceiverCount; i++)
         {
-            var t = new Task<int>(() => -1);
-            t.Start();
-            Receivers.Add(t);
+            Receivers[i] = new IcmpReceiver(IcmpSocket, DataProcessor,
+                new ArraySegment<byte>(Buffer, i * BufferSize, BufferSize));
         }
         
+        // wait for all receivers to get shut down
         while (true)
         {
-            var i = Receivers.FindIndex(r => r is { IsCompleted: true });
-            if (i == -1)
-            {
-                Thread.Sleep(10);
-                continue;
-            }
+            if (Receivers.All(r => r.IsShutDown()))
+                break;
             
-            if (Receivers[i].Result != -1)
-            {
-                var packet = new IcmpPacket(Buffers, i * BufferSize);
-                
-                Console.WriteLine($"[{IcmpSockets[i].Available / packet.Header.TotalLength}] {Encoding.UTF8.GetString(packet.Data)} " + 
-                                  $"@ {Timer.Elapsed.TotalMicroseconds / 1000.0:F4}ms " + 
-                                  $"({receiveStopwatch.Elapsed.TotalMicroseconds / 1000.0:F4}ms since last)");
-            }
-            
-            Receive(i);
-            
-            receiveStopwatch.Restart();
+            Thread.Sleep(250);
         }
+        
+        // shut down
         
         Timer.Stop();
-        
-        for (var i = 0; i < SenderCount; i++)
+        IcmpSocket.Shutdown(SocketShutdown.Both);
+        DataProcessor.Shutdown();
+
+        while (!DataProcessor.IsShutDown)
         {
-            IcmpSockets[i].Shutdown(SocketShutdown.Both);
-            IcmpSockets[i].Close();
+            Thread.Sleep(100);
         }
         
-    }
-    
-    public static void Receive(int i)
-    {
-        var seg = new ArraySegment<byte>(Buffers, i * BufferSize, BufferSize);
-        Receivers[i] = IcmpSockets[i].ReceiveAsync(seg);
     }
     
     #region Extension Methods
@@ -112,14 +93,6 @@ public static class Program
         }
         
         return (ushort)~((checksum32 & 0xFFFF) + (checksum32 >> 16));
-    }
-    
-    public static BinaryReader ToBinaryReader(this byte[] data)
-    {
-        var s = new MemoryStream();
-        s.Write(data);
-        s.Position = 0;
-        return new BinaryReader(s, Encoding.Default, false);
     }
     
     public static byte[] GetBytes(this ushort v)
