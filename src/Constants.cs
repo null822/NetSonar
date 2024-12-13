@@ -8,7 +8,7 @@ public static class Constants
     /// The range of IP addresses to ping. Total number of IP addresses must be a multiple of <see cref="SenderCount"/>.
     /// For an even IP map, use an even subnet mask.
     /// </summary>
-    public static readonly IpRange Range = new("13.224.0.0/15");
+    public static readonly IpRange Range = new("0.0.0.0/2");
     
     /// <summary>
     /// The amount of sender threads
@@ -36,4 +36,14 @@ public static class Constants
     /// How long a receiver should wait before shutting down due to a stale connection
     /// </summary>
     public const int ReceiverShutdownWaitMs = 1_000;
+    
+    /// <summary>
+    /// The amount of IPs to ping before refreshing the status bar
+    /// </summary>
+    public const int SenderStatusRefreshInterval = 256;
+    
+    /// <summary>
+    /// The delay between status bar refreshes
+    /// </summary>
+    public const int StatusBarRefreshRateMs = 100;
 }

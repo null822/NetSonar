@@ -37,7 +37,6 @@ public class IcmpReceiver
         {
             if (_staleCounter > Constants.ReceiverShutdownWaitMs / Constants.ReceiverWait)
             {
-                Console.WriteLine("Receiver Shutdown due to Stale Connection");
                 _isShutDown = true;
                 break;
             }
@@ -55,7 +54,7 @@ public class IcmpReceiver
                 
                 _responses[_responseIndex] = new PingData(
                     packet.Header.SourceAddress,
-                    Program.Timer.Elapsed);
+                    StatusManager.Timer.Elapsed);
                 
                 _responseIndex++;
                 

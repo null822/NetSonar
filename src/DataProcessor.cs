@@ -8,8 +8,9 @@ public class DataProcessor
 {
     private readonly TimeSpan[] _sendTimes = new TimeSpan[Constants.Range.Size];
     private readonly uint _globalFirstIpValue = Constants.Range.First.GetUint();
-
+    
     private readonly Image<Rgb24> _image;
+    private uint _responseCount;
     
     private ArraySegment<PingData> _data = [];
     private bool _isDataNew;
@@ -20,9 +21,21 @@ public class DataProcessor
     
     public DataProcessor()
     {
-        var size = (int)Math.Ceiling(Math.Sqrt(Constants.Range.Size));
-        Console.WriteLine(size);
-        _image = new Image<Rgb24>(size, size);
+        var sqrt = Math.Sqrt(Constants.Range.Size);
+
+        if (sqrt % 1 == 0)
+        {
+            var size = (int)sqrt;
+            _image = new Image<Rgb24>(size, size);
+        }
+        else
+        {
+            var width = (int)Math.Sqrt(Constants.Range.Size * 2d);
+            var height = (int)Math.Sqrt(Constants.Range.Size / 2d);
+            
+            _image = new Image<Rgb24>(width, height);
+        }
+        
         Task.Run(Run);
     }
     
@@ -69,7 +82,11 @@ public class DataProcessor
                 var brightness = (int)Math.Clamp(scaledTime, 0, 255);
                 
                 _image[x, y] = new Rgb24((byte)brightness, (byte)brightness, (byte)brightness);
+
+                _responseCount++;
             }
+            
+            StatusBar.SetField("response-count", $"{_responseCount}");
             
             _isDataNew = false;
             _mutex.ReleaseMutex();

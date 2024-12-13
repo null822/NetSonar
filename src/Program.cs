@@ -21,26 +21,41 @@ public static class Program
         SendBufferSize = BufferSize
     };
     
-    public static readonly Stopwatch Timer = new();
     
     /*
      * 1.0.*.*
      * 
-     * synchronous = ~27.5s / 65536 IPs @ ~1.1MB/s
-     * 16 senders = ~27.5s / 65536 IPs @ ~1.1MB/s
-     * synchronous = ~0.75s / 4096 IPs @ ~1.1MB/s
-     * synchronous + invalid checksum = ~11s / 65536 IPs @ ~2.9MB/s
+     * synchronous = ~27.5s / 65536 IPs @ ~1.1Mbps
+     * 16 senders = ~27.5s / 65536 IPs @ ~1.1Mbps
+     * synchronous = ~0.75s / 4096 IPs @ ~1.1Mbps
+     * synchronous + invalid checksum = ~11s / 65536 IPs @ ~2.9Mbps
      *
-     * ~ 2166 IPs/s/[MB/s]
+     * ~ 2166 IPs/s/[Mbps]
      * 
      * 
      */
     
     public static void Main()
     {
-        Console.WriteLine($"Scanning IPs in range {Constants.Range} ({Constants.Range.GetCidr()})");
+        StatusBar.SetField("ip-range", Constants.Range.ToString());
+        StatusBar.SetField("ip-cidr", Constants.Range.GetCidr());
+        StatusBar.SetField("uptime", Constants.Range.GetCidr());
+        StatusBar.SetLine(0, fields => 
+            $"    Scanning: {fields["ip-cidr"]} ({fields["ip-range"]}) | Uptime: {fields["uptime"]}");
         
-        Timer.Start();
+        StatusBar.CreateField("upload-speed");
+        StatusBar.CreateField("upload-wait");
+        StatusBar.CreateField("upload-prog");
+        StatusBar.SetLine(1, fields => 
+            $"#-> Outgoing | {fields["upload-speed"],8} Mbps | Progress: {fields["upload-prog"],6} | Network Wait: {fields["upload-wait"],8}");
+        
+        StatusBar.CreateField("download-speed");
+        StatusBar.SetField("response-count", "0");
+        StatusBar.SetLine(2, fields => 
+            $"#<- Incoming | {fields["download-speed"],8} Mbps | Responses: {fields["response-count"]}");
+        
+        Task.Run(StatusBar.Run);
+        Task.Run(StatusManager.Run);
         
         // create senders
         for (uint i = 0; i < SenderCount; i++)
@@ -69,10 +84,10 @@ public static class Program
         
         // shut down
         
-        Timer.Stop();
-        IcmpSocket.Shutdown(SocketShutdown.Both);
+        StatusManager.Shutdown();
         DataProcessor.Shutdown();
-
+        IcmpSocket.Shutdown(SocketShutdown.Both);
+        
         while (!DataProcessor.IsShutDown)
         {
             Thread.Sleep(100);
@@ -119,12 +134,11 @@ public static class Program
     
     public static uint SwapEndian(this uint v)
     {
-        var b = v.GetBytes();
-        return (uint)(
-            (b[3] << 24) |
-            (b[2] << 16) |
-            (b[1] <<  8) |
-            (b[0] <<  0));
+        // var b = v.GetBytes();
+        return (((v >>  0) & 0xFF) << 24) |
+               (((v >>  8) & 0xFF) << 16) |
+               (((v >> 16) & 0xFF) <<  8) |
+               (((v >> 24) & 0xFF) <<  0);
     }
     
     public static uint GetUint(this IPAddress v)
