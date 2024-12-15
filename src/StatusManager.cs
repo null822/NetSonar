@@ -61,6 +61,6 @@ public static class StatusManager
         return NetworkInterface.GetAllNetworkInterfaces()
                    .FirstOrDefault(nic => nic.GetIPProperties().UnicastAddresses
                        .Any(a => a.Address.Equals(lIp))) 
-               ?? throw new Exception("No Active Network Interface Found");;
+               ?? throw new Exception("No Active Network Interface Found");
     }
 }

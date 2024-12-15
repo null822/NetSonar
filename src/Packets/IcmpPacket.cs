@@ -1,8 +1,6 @@
-﻿using System.Net;
-using System.Net.Sockets;
-using System.Text;
+﻿using System.Text;
 
-namespace NetSonar;
+namespace NetSonar.Packets;
 
 public struct IcmpPacket
 {
@@ -15,10 +13,10 @@ public struct IcmpPacket
     private ushort _sequenceNumber;
     private byte[] _data;
     
-    public byte Type
+    public IcmpType Type
     {
-        get => _type;
-        set { _type = value; ComputeChecksum(); }
+        get => (IcmpType)_type;
+        set { _type = (byte)value; ComputeChecksum(); }
     }
     public byte Code
     {
@@ -42,11 +40,11 @@ public struct IcmpPacket
         set { _data = value; ComputeChecksum(); }
     }
     
-    public IcmpPacket(IpHeader header, byte type, byte code, ushort identifier, ushort sequenceNumber, byte[] data)
+    public IcmpPacket(IpHeader header, IcmpType type, byte code, ushort identifier, ushort sequenceNumber, byte[] data)
     {
         Header = header;
         
-        _type = type;
+        _type = (byte)type;
         _code = code;
         _identifier = identifier;
         _sequenceNumber = sequenceNumber;

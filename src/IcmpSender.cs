@@ -2,6 +2,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using NetSonar.Packets;
 
 namespace NetSonar;
 
@@ -15,26 +16,32 @@ public class IcmpSender
     private readonly Stopwatch _stopwatchTotal = new();
     private readonly Stopwatch _stopwatchWait = new();
     
-    public IcmpSender(Socket icmpSocket, DataProcessor processor, IpRange range)
+    public IcmpSender(Socket icmpSocket, DataProcessor processor, IpRange range, int id)
     {
         _icmpSocket = icmpSocket;
         _processor = processor;
         _range = range;
         
-        var thread = new Task(Run);
-        thread.Start();
+        var t = new Thread(Run)
+        {
+            Name = $"IcmpSender #{id}"
+        };
+        t.Start();
     }
     
     private void Run()
     {
         _stopwatchTotal.Start();
+
+        var dataLen = (int)Math.Ceiling(Constants.EchoRequestData.Length / 16d) * 16;
+        
         var echo = new IcmpPacket(
             new IpHeader(),
-            0x8,
+            IcmpType.EchoRequest,
             0x0,
-            0x1111,
-            0x2222,
-            Encoding.UTF8.GetBytes("null822/NetSonar Ping".PadRight(32, ' ')));
+            Constants.Identifier,
+            Constants.SequenceNumber,
+            Encoding.UTF8.GetBytes(Constants.EchoRequestData.PadRight(dataLen, ' ')));
         
         var data = echo.GetIcmpBytes();
         
@@ -52,17 +59,15 @@ public class IcmpSender
                 _processor.SetSendTime(ip, StatusManager.Timer.Elapsed);
                 
                 _stopwatchWait.Stop();
-
             }
             catch (Exception e)
             {
-                if (e is not SocketException)
-                    Console.WriteLine(e);
+                Console.WriteLine(e);
             }
             
             if (ipUint % Constants.SenderStatusRefreshInterval == 0)
             {
-                StatusBar.SetField("upload-prog", $"{(ip.GetUint() - _range.First.GetUint()) / (double)_range.Size:P}");
+                StatusBar.SetField("upload-prog", $"{(ipUint - _range.First.GetUint()) / (double)_range.Size:P}");
                 StatusBar.SetField("current-upload", ip.ToString());
                 
                 var totalMs = _stopwatchTotal.Elapsed.TotalMilliseconds;

@@ -8,9 +8,13 @@ public readonly struct IpRange : IEnumerable<IPAddress>
     private readonly uint _first;
     private readonly uint _last;
     
-    public uint Size => _last - _first + 1;
     public IPAddress First => Get(0);
     public IPAddress Last => Get(Size - 1);
+    
+    public uint Size => _last - _first + 1;
+    
+    public int SubnetMaskLength => 32-(int)Math.Round(Math.Log2(_last - _first));
+    public string Cidr => $"{new IPAddress(_first.GetBytes())}/{SubnetMaskLength}";
     
     public IpRange(uint first, uint last)
     {
@@ -49,12 +53,6 @@ public readonly struct IpRange : IEnumerable<IPAddress>
         var size = Size / denominator;
         var first = _first + numerator * size;
         return new IpRange(first, first + size - 1);
-    }
-
-    public string GetCidr()
-    {
-        var subnetMask = 32-(int)Math.Round(Math.Log2(_last - _first));
-        return $"{new IPAddress(_first.GetBytes())}/{subnetMask}";
     }
     
     public IEnumerator<IPAddress> GetEnumerator()

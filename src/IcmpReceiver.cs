@@ -2,6 +2,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using NetSonar.Packets;
 
 namespace NetSonar;
 
@@ -9,6 +10,7 @@ public class IcmpReceiver
 {
     private readonly Socket _icmpSocket;
     private readonly DataProcessor _processor;
+    private readonly int _id;
     
     private readonly Stopwatch _stopwatch = new();
     private int _staleCounter;
@@ -17,40 +19,43 @@ public class IcmpReceiver
     private readonly PingData[] _responses = new PingData[Constants.PingDataBatchSize];
     private int _responseIndex;
 
-    private bool _isShutDown;
+    public bool IsShutDown { get; private set; }
     
-    public IcmpReceiver(Socket icmpSocket, DataProcessor processor, ArraySegment<byte> buffer)
+    public IcmpReceiver(Socket icmpSocket, DataProcessor processor, ArraySegment<byte> buffer, int id)
     {
         _icmpSocket = icmpSocket;
         _processor = processor;
         _buffer = buffer;
+        _id = id;
         
-        var thread = new Task(Run);
-        thread.Start();
+        var t = new Thread(Run)
+        {
+            Name = $"IcmpReceiver #{id}"
+        };
+        t.Start();
     }
     
     private void Run()
     {
+        var count = 0;
+        
         _stopwatch.Start();
         
         while (true)
         {
             if (_staleCounter > Constants.ReceiverShutdownWaitMs / Constants.ReceiverWait)
             {
-                _isShutDown = true;
                 break;
             }
             
             try
             {
                 _icmpSocket.Receive(_buffer);
-
+                
                 var packet = new IcmpPacket(_buffer);
                 
-                // Console.WriteLine(
-                    // $"[{_icmpSocket.Available / packet.Header.TotalLength}] {Encoding.UTF8.GetString(packet.Data)} " +
-                    // $"@ {Program.Timer.Elapsed.TotalMicroseconds / 1000.0:F4}ms " +
-                    // $"({_stopwatch.Elapsed.TotalMicroseconds / 1000.0:F4}ms since last)");
+                // if (packet.SequenceNumber != Constants.SequenceNumber || packet.Identifier != Constants.Identifier)
+                    // continue;
                 
                 _responses[_responseIndex] = new PingData(
                     packet.Header.SourceAddress,
@@ -60,17 +65,36 @@ public class IcmpReceiver
                 
                 if (_responseIndex >= Constants.PingDataBatchSize)
                 {
-                    _processor.SetBatch(_responses);
                     _responseIndex = 0;
+                    _processor.SetBatch(_responses);
                 }
-
+                
                 _staleCounter = 0;
             }
-            catch
+            catch (Exception e)
             {
-                _staleCounter++;
-                Thread.Sleep(Constants.ReceiverWait);
-                continue;
+                if (e is SocketException s)
+                {
+                    var shouldExit = false;
+                    switch (s.SocketErrorCode)
+                    {
+                        case SocketError.TimedOut:
+                        {
+                            _staleCounter++;
+                            Thread.Sleep(Constants.ReceiverWait);
+                            continue;
+                        }
+                        case SocketError.Shutdown:
+                        {
+                            shouldExit = true;
+                            break;
+                        }
+                    }
+                    
+                    if (shouldExit) break;
+                }
+                
+                Console.WriteLine(e);
             }
 
             _stopwatch.Restart();
@@ -79,11 +103,9 @@ public class IcmpReceiver
         // process the remaining responses before shutting down
         _processor.SetBatch(_responses[.._responseIndex]);
         
-    }
-    
-    public bool IsShutDown()
-    {
-        return _isShutDown;
+        IsShutDown = true;
     }
     
 }
+
+public record PingData(IPAddress Address, TimeSpan ReceiveTime);

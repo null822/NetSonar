@@ -6,14 +6,16 @@ namespace NetSonar;
 
 public class DataProcessor
 {
-    private readonly TimeSpan[] _sendTimes = new TimeSpan[Constants.Range.Size];
-    private readonly uint _globalFirstIpValue = Constants.Range.First.GetUint();
+    private readonly TimeSpan[] _sendTimes = new TimeSpan[Config.Range.Size];
+    private readonly uint _globalFirstIpValue = Config.Range.First.GetUint();
     
     private readonly Image<Rgb24> _image;
+    private uint _processedCount;
     private uint _responseCount;
     
-    private ArraySegment<PingData> _data = [];
-    private bool _isDataNew;
+    private readonly PingData[] _data = new PingData[Constants.PingDataBatchSize];
+    private int _dataLength;
+    private bool _unprocessedData;
     private readonly Mutex _mutex = new();
     
     private bool _isShuttingDown;
@@ -21,7 +23,7 @@ public class DataProcessor
     
     public DataProcessor()
     {
-        var sqrt = Math.Sqrt(Constants.Range.Size);
+        var sqrt = Math.Sqrt(Config.Range.Size);
 
         if (sqrt % 1 == 0)
         {
@@ -30,72 +32,117 @@ public class DataProcessor
         }
         else
         {
-            var width = (int)Math.Sqrt(Constants.Range.Size * 2d);
-            var height = (int)Math.Sqrt(Constants.Range.Size / 2d);
+            var width = (int)Math.Sqrt(Config.Range.Size * 2d);
+            var height = (int)Math.Sqrt(Config.Range.Size / 2d);
             
             _image = new Image<Rgb24>(width, height);
         }
         
-        Task.Run(Run);
-    }
-    
-    public void SetBatch(ArraySegment<PingData> data)
-    {
-        _mutex.WaitOne();
-        
-        _data = data;
-        _isDataNew = true;
-        
-        _mutex.ReleaseMutex();
-    }
-    
-    public void SetSendTime(IPAddress address, TimeSpan sendTime)
-    {
-        _sendTimes[address.GetUint() - _globalFirstIpValue] = sendTime;
-    }
-
-    public void Shutdown()
-    {
-        _isShuttingDown = true;
+        var t = new Thread(Run)
+        {
+            Name = "DataProcessor"
+        };
+        t.Start();
     }
     
     private void Run()
     {
         do
         {
+            try
+            {
+
+                if (!_unprocessedData)
+                {
+                    Thread.Sleep(10);
+                    continue;
+                }
+
+                _mutex.WaitOne();
+                
+                for (var i = 0; i < _dataLength; i++)
+                {
+                    var (ip, receiveTime) = _data[i];
+                    
+                    var index = ip.GetUint() - _globalFirstIpValue;
+                    var (x, y) = Deinterleave(index);
+
+                    var time = receiveTime - _sendTimes[ip.GetUint() - _globalFirstIpValue];
+                    var scaledTime = 32768 / (time.TotalMilliseconds + 128);
+                    var brightness = (int)Math.Clamp(scaledTime, 0, 255);
+
+                    _image[x, y] = new Rgb24((byte)brightness, (byte)brightness, (byte)brightness);
+                }
+                _processedCount += (uint)_dataLength;
+                StatusBar.SetField("processed-count", $"{_processedCount}");
+                
+                _unprocessedData = false;
+                _mutex.ReleaseMutex();
+                
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+            }
+
+        } while (!_isShuttingDown || _unprocessedData);
+
+        var name = $"[{Config.Range.First}]~{Config.Range.SubnetMaskLength}";
+        var counter = 0;
+        string newName;
+        do
+        {
+            newName = $"{name}-{counter}";
+            counter++;
+        } 
+        while (File.Exists($"maps/{newName}.png"));
+        
+        _image.Save($"maps/{newName}.png");
+        
+        IsShutDown = true;
+    }
+    
+    public void SetBatch(PingData[] data)
+    {
+        if (data.Length == 0)
+            return;
+        
+        while (true)
+        {
+            while (_unprocessedData)
+            {
+                Thread.Sleep(1);
+            }
+            
             _mutex.WaitOne();
             
-            if (!_isDataNew)
+            if (_unprocessedData)
             {
                 _mutex.ReleaseMutex();
-                Thread.Sleep(100);
                 continue;
             }
-            
-            foreach (var (ip, receiveTime) in _data)
-            {
-                var index = ip.GetUint() - _globalFirstIpValue;
-                var (x, y) = Deinterleave(index);
-                
-                var time = receiveTime - _sendTimes[ip.GetUint() - _globalFirstIpValue];
-                var scaledTime = 32768 / (time.TotalMilliseconds + 128);
-                var brightness = (int)Math.Clamp(scaledTime, 0, 255);
-                
-                _image[x, y] = new Rgb24((byte)brightness, (byte)brightness, (byte)brightness);
 
-                _responseCount++;
-            }
-            
+            data.CopyTo(_data, 0);
+            _dataLength = data.Length;
+            _unprocessedData = true;
+
+            _responseCount += (uint)_dataLength;
             StatusBar.SetField("response-count", $"{_responseCount}");
             
-            _isDataNew = false;
             _mutex.ReleaseMutex();
-            
-        } while (!_isShuttingDown);
-        
-        _image.Save($"map_{Constants.Range}.png");
 
-        IsShutDown = true;
+            break;
+        }
+    }
+    
+    public void SetSendTime(IPAddress address, TimeSpan sendTime)
+    {
+        _sendTimes[address.GetUint() - _globalFirstIpValue] = sendTime;
+    }
+    
+    public void Shutdown()
+    {
+        _isShuttingDown = true;
     }
     
     private static (ushort X, ushort Y) Deinterleave(uint zValue)

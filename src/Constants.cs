@@ -1,15 +1,9 @@
-﻿namespace NetSonar;
+﻿using NetSonar.Packets;
+
+namespace NetSonar;
 
 public static class Constants
 {
-    // TODO: allow for non-SenderCount-multiple lengths
-    // TODO: crash on odd subnet mask?
-    /// <summary>
-    /// The range of IP addresses to ping. Total number of IP addresses must be a multiple of <see cref="SenderCount"/>.
-    /// For an even IP map, use an even subnet mask.
-    /// </summary>
-    public static readonly IpRange Range = new("0.0.0.0/2");
-    
     /// <summary>
     /// The amount of sender threads
     /// </summary>
@@ -27,6 +21,20 @@ public static class Constants
     /// The size of a batch of ping responses, submitted to the <see cref="DataProcessor"/>
     /// </summary>
     public const int PingDataBatchSize = 16;
+    
+    /// <summary>
+    /// The value of the <see cref="IcmpPacket.Identifier"/> field of all outgoing ICMP packets
+    /// </summary>
+    public const ushort Identifier = 'N' + ('S' << 8);
+    /// <summary>
+    /// The value of the <see cref="IcmpPacket.SequenceNumber"/> field of all outgoing ICMP packets
+    /// </summary>
+    public const ushort SequenceNumber = 0x2222;
+    
+    /// <summary>
+    /// A string containing the data to put in the <see cref="IcmpPacket.Data"/> field
+    /// </summary>
+    public const string EchoRequestData = "null822/NetSonar";
     
     /// <summary>
     /// How long a receiver should wait in between failed receiving attempts

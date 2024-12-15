@@ -2,7 +2,7 @@
 using System.Net.Sockets;
 using System.Text;
 
-namespace NetSonar;
+namespace NetSonar.Packets;
 
 // TODO: compute header checksum
 public struct IpHeader

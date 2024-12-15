@@ -18,9 +18,8 @@ public static class Program
     {
         ReceiveTimeout = 1,
         ReceiveBufferSize = BufferSize,
-        SendBufferSize = BufferSize
+        SendBufferSize = BufferSize,
     };
-    
     
     /*
      * 1.0.*.*
@@ -32,27 +31,43 @@ public static class Program
      *
      * ~ 2166 IPs/s/[Mbps]
      * 
-     * 
      */
     
-    public static void Main()
+    public static void Main(string[] args)
     {
-        StatusBar.SetField("ip-range", Constants.Range.ToString());
-        StatusBar.SetField("ip-cidr", Constants.Range.GetCidr());
-        StatusBar.SetField("uptime", Constants.Range.GetCidr());
+        if (args.Length >= 1)
+        {
+            Config.Range = new IpRange(args[0]);
+        }
+        else
+        {
+            // Config.Range = new IpRange("220.232.100.55/16");
+            Console.Write("IP Range: ");
+            Config.Range = new IpRange(Console.ReadLine() ?? "");
+        }
+        
+        Console.Clear();
+        
+        StatusBar.SetField("ip-range", Config.Range.ToString());
+        StatusBar.SetField("ip-cidr", Config.Range.Cidr);
+        StatusBar.CreateField("uptime");
         StatusBar.SetLine(0, fields => 
-            $"    Scanning: {fields["ip-cidr"]} ({fields["ip-range"]}) | Uptime: {fields["uptime"]}");
+            $"Scanning: {fields["ip-cidr"]} ({fields["ip-range"]}) | Uptime: {fields["uptime"]}");
         
         StatusBar.CreateField("upload-speed");
         StatusBar.CreateField("upload-wait");
         StatusBar.CreateField("upload-prog");
         StatusBar.SetLine(1, fields => 
-            $"#-> Outgoing | {fields["upload-speed"],8} Mbps | Progress: {fields["upload-prog"],6} | Network Wait: {fields["upload-wait"],8}");
+            $"#-> |  Send   | {fields["upload-speed"],8} Mbps | Progress: {fields["upload-prog"],6} | Network Wait: {fields["upload-wait"],8}");
         
         StatusBar.CreateField("download-speed");
         StatusBar.SetField("response-count", "0");
         StatusBar.SetLine(2, fields => 
-            $"#<- Incoming | {fields["download-speed"],8} Mbps | Responses: {fields["response-count"]}");
+            $"#<- | Receive | {fields["download-speed"],8} Mbps | Total: {fields["response-count"]}");
+        
+        StatusBar.SetField("processed-count", "0");
+        StatusBar.SetLine(3, fields => 
+            $"<-# | Process | Total: {fields["processed-count"]}");
         
         Task.Run(StatusBar.Run);
         Task.Run(StatusManager.Run);
@@ -60,7 +75,12 @@ public static class Program
         // create senders
         for (uint i = 0; i < SenderCount; i++)
         {
-            Senders[i] = new IcmpSender(IcmpSocket, DataProcessor, Constants.Range.Split(i, SenderCount));
+            Senders[i] = new IcmpSender(
+                IcmpSocket,
+                DataProcessor,
+                Config.Range.Split(i, SenderCount),
+                (int)i
+                );
         }
         
         var receiveStopwatch = new Stopwatch();
@@ -69,14 +89,17 @@ public static class Program
         // create receivers
         for (var i = 0; i < ReceiverCount; i++)
         {
-            Receivers[i] = new IcmpReceiver(IcmpSocket, DataProcessor,
-                new ArraySegment<byte>(Buffer, i * BufferSize, BufferSize));
+            Receivers[i] = new IcmpReceiver(
+                IcmpSocket,
+                DataProcessor,
+                new ArraySegment<byte>(Buffer, i * BufferSize, BufferSize),
+                i);
         }
         
         // wait for all receivers to get shut down
         while (true)
         {
-            if (Receivers.All(r => r.IsShutDown()))
+            if (Receivers.All(r => r.IsShutDown))
                 break;
             
             Thread.Sleep(250);
@@ -92,9 +115,8 @@ public static class Program
         {
             Thread.Sleep(100);
         }
-        
     }
-    
+
     #region Extension Methods
     
     public static ushort ComputeIpChecksum(this byte[] data)
