@@ -77,21 +77,21 @@ public struct IcmpPacket
     
     public IcmpPacket(Stream s)
     {
-        var packet = new BinaryReader(s, Encoding.Default, true);
+        var buffer = new BinaryReader(s, Encoding.Default, true);
         
         Header = new IpHeader(s);
         
-        _type = packet.ReadByte();
-        _code = packet.ReadByte();
-        _checksum = packet.ReadUInt16();
-        _identifier = packet.ReadUInt16();
-        _sequenceNumber = packet.ReadUInt16();
+        _type = buffer.ReadByte();
+        _code = buffer.ReadByte();
+        _checksum = buffer.ReadUInt16();
+        _identifier = buffer.ReadUInt16();
+        _sequenceNumber = buffer.ReadUInt16();
         
         var data = new byte[Header.TotalLength - 20 - 8];
-        var dataLen = packet.Read(data);
+        var dataLen = buffer.Read(data);
         _data = data[..(dataLen-1)];
         
-        packet.Dispose();
+        buffer.Dispose();
     }
     
     /// <summary>

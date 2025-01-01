@@ -47,7 +47,7 @@ public readonly struct IpRange : IEnumerable<IPAddress>
         var v = _first + index;
         return new IPAddress(v.SwapEndian());
     }
-
+    
     public IpRange Split(uint numerator, uint denominator)
     {
         var size = Size / denominator;

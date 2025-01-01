@@ -20,22 +20,27 @@ public static class StatusManager
 
         var nic = GetActiveNetworkInterface();
         const double refreshMultiplier = 1000d / Constants.StatusBarRefreshRateMs;
-        
-        _prevUp = nic.GetIPStatistics().BytesSent;
-        _prevDown = nic.GetIPStatistics().BytesReceived;
+
+        var statistics = nic.GetIPStatistics();
+        _prevUp = statistics.BytesSent;
+        _prevDown = statistics.BytesReceived;
 
         do
         {
-            var up = nic.GetIPStatistics().BytesSent;
-            var down = nic.GetIPStatistics().BytesReceived;
-
+            statistics = nic.GetIPStatistics();
+            var up = statistics.BytesSent;
+            var down = statistics.BytesReceived;
+            
             var upSpeed = (up - _prevUp) * 8 / 1_000_000d * refreshMultiplier;
             var downSpeed = (down - _prevDown) * 8 / 1_000_000d * refreshMultiplier;
-
+            
             StatusBar.SetField("upload-speed", $"{upSpeed:N4}");
             StatusBar.SetField("download-speed", $"{downSpeed:N4}");
             
-            StatusBar.SetField("uptime", $"{Timer.Elapsed.Hours}h {Timer.Elapsed.Minutes}m {Timer.Elapsed.Seconds}s {Timer.Elapsed.Milliseconds}ms");
+            StatusBar.SetField("uptime-h", Timer.Elapsed.Hours.ToString());
+            StatusBar.SetField("uptime-m", Timer.Elapsed.Minutes.ToString());
+            StatusBar.SetField("uptime-s", Timer.Elapsed.Seconds.ToString());
+            StatusBar.SetField("uptime-ms", Timer.Elapsed.Milliseconds.ToString());
             
             _prevUp = up;
             _prevDown = down;

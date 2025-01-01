@@ -1,4 +1,6 @@
-﻿using System.Net;
+﻿using System.Diagnostics;
+using System.Net;
+using NetSonar.Packets;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -6,15 +8,20 @@ namespace NetSonar;
 
 public class DataProcessor
 {
-    private readonly TimeSpan[] _sendTimes = new TimeSpan[Config.Range.Size];
+    // private readonly TimeSpan[] _sendTimes = new TimeSpan[Config.Range.Size];
     private readonly uint _globalFirstIpValue = Config.Range.First.GetUint();
     
     private readonly Image<Rgb24> _image;
-    private uint _processedCount;
+    private readonly Stopwatch _imageRefreshTimer = new();
     private uint _responseCount;
     
-    private readonly PingData[] _data = new PingData[Constants.PingDataBatchSize];
+    // private TimeSpan[] _receiveTimes = new TimeSpan[Constants.PingDataBatchSize];
+    
+    private byte[] _data = new byte[Constants.ReceiveBufferSize];
     private int _dataLength;
+    private readonly MemoryStream _dataStream = new(Constants.ReceiveBufferSize);
+    
+    
     private bool _unprocessedData;
     private readonly Mutex _mutex = new();
     
@@ -47,62 +54,85 @@ public class DataProcessor
     
     private void Run()
     {
+        var targetName = $"[{Config.Range.First}]~{Config.Range.SubnetMaskLength}";
+        var counter = 0;
+        string name;
+        do
+        {
+            name = $"{targetName}-{counter}";
+            counter++;
+        } 
+        while (File.Exists($"maps/{name}.png"));
+        var imagePath = $"maps/{name}.png";
+        
+        _image.Save(imagePath);
+        _imageRefreshTimer.Start();
         do
         {
             try
             {
-
                 if (!_unprocessedData)
                 {
-                    Thread.Sleep(10);
+                    Thread.Sleep(0);
                     continue;
                 }
 
                 _mutex.WaitOne();
                 
-                for (var i = 0; i < _dataLength; i++)
+                _dataStream.Position = 0;
+                _dataStream.Write(_data);
+                _dataStream.Position = 0;
+
+                var length = _dataLength;
+                
+                _mutex.ReleaseMutex();
+                
+                // Console.WriteLine($"New Batch ({_dataLength})");
+                while (_dataStream.Position < length)
                 {
-                    var (ip, receiveTime) = _data[i];
+                    var packet = new IcmpPacket(_dataStream);
+                    
+                    var ip = packet.Header.SourceAddress;
+                    // var receiveTime = _receiveTimes[i];
+                    
+                    // Console.WriteLine(_dataStream.Position);
                     
                     var index = ip.GetUint() - _globalFirstIpValue;
                     var (x, y) = Deinterleave(index);
-
-                    var time = receiveTime - _sendTimes[ip.GetUint() - _globalFirstIpValue];
-                    var scaledTime = 32768 / (time.TotalMilliseconds + 128);
-                    var brightness = (int)Math.Clamp(scaledTime, 0, 255);
-
+                    
+                    // var time = receiveTime - _sendTimes[ip.GetUint() - _globalFirstIpValue];
+                    // var scaledTime = 32768 / (time.TotalMilliseconds + 128);
+                    // var brightness = (int)Math.Clamp(scaledTime, 0, 255);
+                    var brightness = 255;
+                    
                     _image[x, y] = new Rgb24((byte)brightness, (byte)brightness, (byte)brightness);
+                    
+                    _responseCount++;
                 }
-                _processedCount += (uint)_dataLength;
-                StatusBar.SetField("processed-count", $"{_processedCount}");
+                
+                if (_imageRefreshTimer.Elapsed.TotalMilliseconds > Constants.MapRefreshRateMs)
+                {
+                    _image.Save(imagePath);
+                    _imageRefreshTimer.Restart();
+                }
                 
                 _unprocessedData = false;
-                _mutex.ReleaseMutex();
+                
+                StatusBar.SetField("processed-count", $"{_responseCount}");
                 
             }
             catch (Exception e)
             {
                 Console.WriteLine(e);
             }
-
         } while (!_isShuttingDown || _unprocessedData);
-
-        var name = $"[{Config.Range.First}]~{Config.Range.SubnetMaskLength}";
-        var counter = 0;
-        string newName;
-        do
-        {
-            newName = $"{name}-{counter}";
-            counter++;
-        } 
-        while (File.Exists($"maps/{newName}.png"));
         
-        _image.Save($"maps/{newName}.png");
+        _image.Save(imagePath);
         
         IsShutDown = true;
     }
     
-    public void SetBatch(PingData[] data)
+    public void Submit(ref byte[] data, int dataLength)
     {
         if (data.Length == 0)
             return;
@@ -121,13 +151,12 @@ public class DataProcessor
                 _mutex.ReleaseMutex();
                 continue;
             }
-
-            data.CopyTo(_data, 0);
-            _dataLength = data.Length;
+            
+            (data, _data) = (_data, data);
+            // (receiveTimes, _receiveTimes) = (_receiveTimes, receiveTimes);
+            _dataLength = dataLength;
+            
             _unprocessedData = true;
-
-            _responseCount += (uint)_dataLength;
-            StatusBar.SetField("response-count", $"{_responseCount}");
             
             _mutex.ReleaseMutex();
 
@@ -137,7 +166,7 @@ public class DataProcessor
     
     public void SetSendTime(IPAddress address, TimeSpan sendTime)
     {
-        _sendTimes[address.GetUint() - _globalFirstIpValue] = sendTime;
+        // _sendTimes[address.GetUint() - _globalFirstIpValue] = sendTime;
     }
     
     public void Shutdown()

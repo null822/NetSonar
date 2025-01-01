@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using NetSonar.Packets;
@@ -11,10 +10,9 @@ public class IcmpSender
     private readonly Socket _icmpSocket;
     private readonly DataProcessor _processor;
     
-    private readonly IpRange _range;
+    public bool IsShutDown { get; private set; }
     
-    private readonly Stopwatch _stopwatchTotal = new();
-    private readonly Stopwatch _stopwatchWait = new();
+    private readonly IpRange _range;
     
     public IcmpSender(Socket icmpSocket, DataProcessor processor, IpRange range, int id)
     {
@@ -31,8 +29,6 @@ public class IcmpSender
     
     private void Run()
     {
-        _stopwatchTotal.Start();
-
         var dataLen = (int)Math.Ceiling(Constants.EchoRequestData.Length / 16d) * 16;
         
         var echo = new IcmpPacket(
@@ -46,42 +42,60 @@ public class IcmpSender
         var data = echo.GetIcmpBytes();
         
         var ep = new IPEndPoint(new IPAddress(0), 0);
-        
+
+        var failCount = 0u;
         var ipUint = _range.First.GetUint();
-        foreach (var ip in _range)
+
+        for (uint i = 0; i < _range.Size; i++)
         {
+            var ip = _range.Get(i);
             ep.Address = ip;
+            
             try
             {
-                _stopwatchWait.Start();
-                
                 _icmpSocket.SendTo(data, ep);
                 _processor.SetSendTime(ip, StatusManager.Timer.Elapsed);
-                
-                _stopwatchWait.Stop();
             }
             catch (Exception e)
             {
+                if (e is SocketException s)
+                {
+                    var shouldExit = false;
+                    switch (s.SocketErrorCode)
+                    {
+                        case SocketError.WouldBlock:
+                        case SocketError.TimedOut:
+                        {
+                            // retry the current IP
+                            i--;
+                            continue;
+                        }
+                        case SocketError.NetworkUnreachable:
+                        {
+                            failCount++;
+                            continue;
+                        }
+                        case SocketError.Shutdown:
+                        {
+                            shouldExit = true;
+                            break;
+                        }
+                    }
+                    if (shouldExit) break;
+                }
+                
                 Console.WriteLine(e);
             }
             
             if (ipUint % Constants.SenderStatusRefreshInterval == 0)
             {
                 StatusBar.SetField("upload-prog", $"{(ipUint - _range.First.GetUint()) / (double)_range.Size:P}");
-                StatusBar.SetField("current-upload", ip.ToString());
-                
-                var totalMs = _stopwatchTotal.Elapsed.TotalMilliseconds;
-                var waitMs = _stopwatchWait.Elapsed.TotalMilliseconds;
-                StatusBar.SetField("upload-wait", $"{waitMs/totalMs:P4}");
+                StatusBar.SetField("fail-count", $"{failCount}");
             }
-
+            
             ipUint++;
         }
         
-        _stopwatchTotal.Stop();
-        _stopwatchWait.Stop();
-        // var totalMs = _stopwatchTotal.Elapsed.TotalMicroseconds / 1000.0;
-        // var waitMs = _stopwatchWait.Elapsed.TotalMicroseconds / 1000.0;
-        // Console.WriteLine($"Sent All {_range.Size} ({_range}) ICMP Echo Requests in {totalMs:F4}ms ({waitMs:F4}ms spent waiting for packets to send ({waitMs/totalMs:P} of total))");
+        IsShutDown = true;
     }
 }
