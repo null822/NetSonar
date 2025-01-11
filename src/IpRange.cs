@@ -74,15 +74,13 @@ public readonly struct IpRange : IEnumerable<IPAddress>
     {
         private long _index = -1;
         
-        public IPAddress Current => _index >= 0 ? range.Get((uint)_index) : throw new Exception("asdf");
-        object? IEnumerator.Current => Current;
+        public IPAddress Current => range.Get((uint)_index);
+        object IEnumerator.Current => Current;
         
         public bool MoveNext()
         {
             if (_index >= range.Size - 1)
             {
-                // _index = range.Size - 1;
-                // Console.WriteLine(_index);
                 return false;
             }
             

@@ -1,4 +1,5 @@
-﻿using NetSonar.Packets;
+﻿using NetSonar.PacketHandlers;
+using NetSonar.Packets;
 
 namespace NetSonar;
 
@@ -14,7 +15,7 @@ public static class Constants
     public const int ReceiverCount = 1;
     
     /// <summary>
-    /// The size of the receiving buffer for a batch of <see cref="IcmpPacket"/> responses
+    /// The size of the receiving buffer and batch of <see cref="IcmpPacket"/> responses, in bytes
     /// </summary>
     public const int ReceiveBufferSize = 8192;
     /// <summary>
@@ -22,6 +23,17 @@ public static class Constants
     /// </summary>
     public const int ReceiveBufferCount = 8;
     
+    /// <summary>
+    /// How long to wait for submitting a batch of response <see cref="IcmpPacket"/>s to the <see cref="DataProcessor"/>
+    /// before accepting a new batch into the <see cref="BatchSubmitter"/> and trying again
+    /// </summary>
+    public const int BatchSubmitTimeout = 50;
+    
+    /// <summary>
+    /// How long a receiver should wait before shutting down due to a stale connection, in milliseconds
+    /// </summary>
+    public const int ReceiverShutdownWait = 1_000;
+
     
     
     /// <summary>
@@ -38,32 +50,14 @@ public static class Constants
     /// </summary>
     public const string EchoRequestData = "null822/NetSonar";
     
-    /// <summary>
-    /// How long a receiver should wait in between failed receiving attempts
-    /// </summary>
-    public const int SenderIpsPer50MsWait = 16;
-    /// <summary>
-    /// How long a receiver should wait before shutting down due to a stale connection
-    /// </summary>
-    public const int ReceiverShutdownWaitMs = 1_000;
     
-    /// <summary>
-    /// The amount of IPs to ping before refreshing the status bar
-    /// </summary>
-    public const int SenderStatusRefreshInterval = 256;
-    
-    /// <summary>
-    /// The amount of times to try to receive before refreshing the status bar
-    /// </summary>
-    public const int ReceiverStatusRefreshRateMs = 500;
-
     /// <summary>
     /// The delay between status bar refreshes
     /// </summary>
-    public const int StatusBarRefreshRateMs = 100;
+    public const int StatusBarRefreshRateMs = 500;
     
     /// <summary>
-    /// The amount of IP responses to process before updating the map file
+    /// The time, in milliseconds, between each update of the map file
     /// </summary>
-    public const int MapRefreshRateMs = 5000;
+    public const int MapRefreshRate = 200;
 }

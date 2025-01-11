@@ -8,6 +8,7 @@ namespace NetSonar;
 public static class StatusManager
 {
     public static readonly Stopwatch Timer = new();
+    public static double TimerMs => Timer.Elapsed.TotalMilliseconds;
     
     private static long _prevUp;
     private static long _prevDown;
@@ -24,7 +25,7 @@ public static class StatusManager
         var statistics = nic.GetIPStatistics();
         _prevUp = statistics.BytesSent;
         _prevDown = statistics.BytesReceived;
-
+        
         do
         {
             statistics = nic.GetIPStatistics();
@@ -49,6 +50,14 @@ public static class StatusManager
         } while (!_isShuttingDown);
         
         Timer.Stop();
+    }
+    
+    //TODO: make this handle high calling rates
+    public static bool ShouldUpdateStatusBar(ref TimeSpan prevUpdate)
+    {
+        var result = Timer.Elapsed.TotalMilliseconds - prevUpdate.TotalMilliseconds >= Constants.StatusBarRefreshRateMs;
+        if (result) prevUpdate = Timer.Elapsed;
+        return result;
     }
 
     public static void Shutdown()

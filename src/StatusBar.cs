@@ -7,6 +7,9 @@ public static class StatusBar
     private static readonly Dictionary<string, string> Fields = [];
     private static readonly List<StatusBarLine> Lines = [];
     private static int _maxLinePos;
+
+    private static bool _isShuttingDown;
+    public static bool IsShutDown { get; private set; }
     
     public static void SetField(string name, string value)
     {
@@ -35,8 +38,12 @@ public static class StatusBar
     
     public static void Run()
     {
-        while (true)
+        var running = true;
+        while (running)
         {
+            if (_isShuttingDown)
+                running = false;
+            
             foreach (var line in Lines)
             {
                 var prevPos = Console.GetCursorPosition();
@@ -46,6 +53,29 @@ public static class StatusBar
             }
             
             Thread.Sleep(Constants.StatusBarRefreshRateMs);
+        }
+
+        IsShutDown = true;
+    }
+    
+    /// <summary>
+    /// Shuts down the <see cref="StatusBar"/> asynchronously.
+    /// </summary>
+    public static void Shutdown()
+    {
+        _isShuttingDown = true;
+    }
+    
+    /// <summary>
+    /// Shuts down the <see cref="StatusBar"/> synchronously.
+    /// </summary>
+    public static void SyncShutdown()
+    {
+        Shutdown();
+
+        while (!IsShutDown)
+        {
+            Thread.Sleep(0);
         }
     }
     
@@ -130,7 +160,7 @@ public static class StatusBar
             
             _fieldReferences = fieldReferences.ToArray();
         }
-
+        
         public string GetText()
         {
             foreach (var fieldReference in _fieldReferences)
